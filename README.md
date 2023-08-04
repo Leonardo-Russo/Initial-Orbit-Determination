@@ -6,7 +6,7 @@ Note that this project is developed around three different datasets but it is NO
 
 Methods Comparison            |  Trace of the Covariance Matrix
 -------------------------|-------------------------
-![Alt text](./Output/Trajectories.jpg "Trajectories Comparison") | ![Alt text](./Output/Covariance%20Matrix%20Trace.jpg "Covariance Matrix Trace")
+![Trajectories Comparison](./Output/Trajectories.jpg "Trajectories Comparison") | ![Covariance Matrix Trace](./Output/Covariance%20Matrix%20Trace.jpg "Covariance Matrix Trace")
 
 
 ### Table of Contents
