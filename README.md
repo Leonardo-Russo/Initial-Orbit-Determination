@@ -107,3 +107,7 @@ In this part of the code, the Kalman Filter is applied from the first estimate f
 4. The state estimates are compared between the Kalman Filter and SGP4 Propagation.
 
 The entire process relies on the correct modeling of the satellite dynamics and the measurement function, which directly impact the quality of the state estimates.
+
+**Contributor:** Leonardo Russo
+
+**Last Updated:** 05/05/2023
