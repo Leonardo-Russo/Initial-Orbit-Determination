@@ -10,18 +10,10 @@ Methods Comparison            |  Trace of the Covariance Matrix
 
 
 ### Table of Contents
-- [Initial Orbit Determination](#initial-orbit-determination)
-    - [Table of Contents](#table-of-contents)
-  - [Introduction to Initial Orbit Determination](#introduction-to-initial-orbit-determination)
-  - [Laplace (3-Point) Initial Orbit Determination](#laplace-3-point-initial-orbit-determination)
-    - [*Methodology*](#methodology)
-  - [Circular Initial Orbit Determination](#circular-initial-orbit-determination)
-    - [*Methodology*](#methodology-1)
-  - [Kalman Filter Initial Orbit Determination](#kalman-filter-initial-orbit-determination)
-    - [*Methodology*](#methodology-2)
-          - [*Initialization*](#initialization)
-          - [*Kalman Iterations*](#kalman-iterations)
-          - [*Results*](#results)
+- [Introduction to Initial Orbit Determination](#introduction-to-initial-orbit-determination)
+- [Laplace (3-Point) Initial Orbit Determination](#laplace-3-point-initial-orbit-determination)
+- [Circular Initial Orbit Determination](#circular-initial-orbit-determination)
+- [Kalman Filter Initial Orbit Determination](#kalman-filter-initial-orbit-determination)
 
 ## Introduction to Initial Orbit Determination
 
