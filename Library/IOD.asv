@@ -1,0 +1,415 @@
+% This exercise performs OD from optical measurements of position of a S/C,
+% using a Kalman filter
+
+close all
+clear all
+clc
+
+global mu
+
+mu = 398600.4415;           % km^3/s^2
+rE = 6378.1363;             % km
+D_sid = 86164;              % s
+D_sol = 86400;              % s
+
+% Position of Collepardo Observatory
+long_site = deg2rad(13.375);        % longitude [rad]
+latgd_site = deg2rad(41.765278);    % geodetic latitude [rad]
+alt_site = 555*1e-3;                % altitude [Km]
+
+% Optical Measurements Sentinel 3A
+RA1 = deg2rad(210.5123);        % rad
+DEC1 = deg2rad(-18.0994961);    % rad
+RA2 = deg2rad(205.6727694);     % rad
+DEC2 = deg2rad(-10.4034506);    % rad
+RA3 = deg2rad(199.8266147);     % rad
+DEC3 = deg2rad(-1.2238648);     % rad
+RA4 = deg2rad(192.8598003);     % rad
+DEC4 = deg2rad(9.0516442);      % rad
+RA5 = deg2rad(184.4075794);     % rad
+DEC5 = deg2rad(19.8782597);     % rad
+RA6 = deg2rad(174.6944985);     % rad
+DEC6 = deg2rad(29.7031300);     % rad
+RA7 = deg2rad(163.9909052);     % rad
+DEC7 = deg2rad(37.5412623);     % rad
+
+% n° of Measurements
+N = 7;
+
+tbias = -0.3136;    % s
+texp = 1;
+
+tbias = tbias + texp/2;
+
+% Times of Measurements (UTC)
+t1 = datetime(2022, 06, 22, 21, 18, 01, 062+tbias);
+t2 = datetime(2022, 06, 22, 21, 18, 40, 723+tbias);
+t3 = datetime(2022, 06, 22, 21, 19, 20, 728+tbias);
+t4 = datetime(2022, 06, 22, 21, 20, 00, 412+tbias);
+t5 = datetime(2022, 06, 22, 21, 20, 40, 856+tbias);
+t6 = datetime(2022, 06, 22, 21, 21, 20, 789+tbias);
+t7 = datetime(2022, 06, 22, 21, 22, 00, 350+tbias);
+
+
+% Define the Observations Matrix
+tspan_obs = [t1 t2 t3 t4 t5 t6 t7]';
+Z = [RA1 RA2 RA3 RA4 RA5 RA6 RA7
+     DEC1 DEC2 DEC3 DEC4 DEC5 DEC6 DEC7];
+
+
+%% Laplace Initial Orbit Determination
+
+indices = [1 2 3];      % choice of the observations set
+
+% Initialize input State and Times
+X0 = [];
+times = [];
+P = [long_site, latgd_site, alt_site, mu]';
+
+% Define the Substate from the given indices
+for i = 1 : length(indices)
+    X0 = [X0; Z(1:2, i)];
+    times = [times; tspan_obs(i)];
+end
+
+% We perform IOD at intermediate time -> t_star = times(2)
+t_star = times(2);
+[Rgs, dRgs, ddRgs] = groundStation(long_site, latgd_site, alt_site, t_star);
+
+[rLap, vLap] = LaplaceIOD(X0, times, Rgs, dRgs, ddRgs, t_star, P);
+coeLap = rvECI2coe(rLap, vLap);
+
+COE0 = coeLap;
+
+% Display the Results
+fprintf('\n\tLaplace Assumption Classical Orbital Elements:\n\ta = %.4f\n\te = %.4f\n\ti = %.4f\n\tOmega = %.4f\n\tomega = %.4f\n\tnu0 = %.4f\n\n', [coeLap(1:2), rad2deg(coeLap(3:6))])
+fprintf('\tThe reference altitude is: %.4f km\n', coeLap(1)-rE);
+
+figure('Name', 'Position of the Ground Station')
+ECIDrawTraj3D(Rgs'/norm(Rgs)*rE)
+
+
+%% Laplace IOD with Target Set
+
+% Define Sets of Observation indices
+all_indices = nchoosek(1:7, 3);     % choose any 3 out of 7
+
+% Initialize Optimal COE
+coe_opt = [];
+target_diff = inf;
+
+% Initialize input State and Times
+X0 = [];
+times = [];
+P = [long_site, latgd_site, alt_site, mu]';
+
+% Define the Target Set -> semi-major axis
+target_a = 7190;      % km
+
+% Try All Combinations
+for i = 1 : size(all_indices, 1)
+
+    % Define the Substate from the given indices
+    indices = all_indices(i, :);
+    X0 = [];
+    times = [];
+    for j = 1:length(indices)
+        X0 = [X0; Z(1:2, indices(j))];
+        times = [times; tspan_obs(indices(j))];
+    end
+
+    % We perform IOD at intermediate time -> t_star = times(2)
+    t_star = times(2);
+    [Rgs, dRgs, ddRgs] = groundStation(long_site, latgd_site, alt_site, t_star);
+    [rLap, vLap] = LaplaceIOD(X0, times, Rgs, dRgs, ddRgs, t_star, P);
+    coeLap = rvECI2coe(rLap, vLap);
+
+    % Update the Optimal Result
+    if abs(coeLap(1) - target_a) < target_diff
+        target_diff = abs(coeLap(1) - target_a);
+        coe_opt = coeLap;
+        indices_opt = indices;
+    end
+
+end
+
+% Display the optimal COE
+fprintf('\n\n\tOptimized Laplace Assumption with Bias:\n\ta = %.4f\n\te = %.4f\n\ti = %.4f\n\tOmega = %.4f\n\tomega = %.4f\n\tnu0 = %.4f\n\n', [coe_opt(1:2), rad2deg(coe_opt(3:6))])
+fprintf('\tThe reference altitude is: %.4f km\n', coe_opt(1)-rE);
+fprintf('\tThe Optimal Order for the Observations is: %.0f %.0f %.0f\n', indices_opt)
+
+
+%% Circular Hypothesis Initial Orbit Determination
+
+indices = [1 3];        % choice of the observations set
+
+% Initialize input State and Times
+X0 = [];
+times = [];
+
+% Define the Substate from the given indices
+for i = 1 : length(indices)
+    X0 = [X0; Z(1:2, i)];
+    times = [times; tspan_obs(i)];
+end
+
+[Rgs1, ~, ~] = groundStation(long_site, latgd_site, alt_site, times(1));
+[Rgs2, ~, ~] = groundStation(long_site, latgd_site, alt_site, times(2));
+
+rho1_0 = 1500;     % first guess value [km]  source: https://www.n2yo.com/?s=41335
+
+P = [mu, rho1_0];        % Constant Paramenters Vector
+
+[r1Circ, v1Circ] = CircularIOD(X0, times, Rgs1, Rgs2, P);
+
+coeCirc = rvECI2coe(r1Circ, v1Circ);
+
+% Display the Results
+fprintf('\n\n\tCircular Assumption Classical Orbital Elements:\n\ta = %.6f\n\te = %.6f\n\ti = %.6f\n\tOmega = %.6f\n\tomega = %.6f\n\tnu0 = %.6f\n\n', [coeCirc(1:2), rad2deg(coeCirc(3:6))])
+fprintf('\tThe reference altitude is: %.4f km\n', coeCirc(1)-rE);
+
+
+%% Plot of the Results
+
+% Define Initial Conditions
+COE0 = coeCirc;
+
+% Define the Time Domain
+t0 = 0;
+a0 = COE0(1);                % initial semi-major axis
+T = 2*pi*sqrt(a0^3/mu);      % orbital period
+tf = t0 + T;
+
+% Defining the options for the Integration
+Tol0 = 1e-9;
+Tol1 = 1e-11;
+MaxStep = 1;
+options = odeset('RelTol', Tol0, 'AbsTol',Tol1, 'MaxStep', MaxStep);
+
+% Perform the Propagation
+[tspan, COE] = ode113('DynamicalModel_COE', [t0, tf], COE0, options);
+
+% Store the Results
+COE = COE(:, 1:6);
+a = COE(:, 1);
+e = COE(:, 2);
+incl = COE(:, 3);
+omega= COE(:, 4);
+Omega = COE(:, 5);
+nu = COE(:, 6);
+tspan = t1 + seconds(tspan);
+
+M = length(tspan);
+rMatrixECI = zeros(M, 3);
+
+for j = 1 : M
+    [r_vect, v_vect] = coe2rvECI(COE(j, :), mu);
+    rMatrixECI(j, :) = r_vect';
+end
+
+
+figure('Name', 'Trajectory Representation in 3D')
+DrawTraj3D(rMatrixECI)
+
+
+%% Kalman Filter
+
+% Define the Initial Covariance Matrix with TLE Accuracy
+P0 = [10^2*eye(3), zeros(3, 3);...
+      zeros(3, 3), 0.01^2*eye(3)];      % respectively 10 km and 0.01 km/s
+
+
+% Get TLE at the Observation Date ->   https://www.space-track.org/auth/login
+
+% Assume Measurement Error of 2 arcsec -> to check header of fits!!!
+sigma_meas = deg2rad(2/3600);
+
+% Define Measurement Error Matrix
+R = sigma_meas^2*eye(2);            % a.k.a. W_obs
+
+% Define Error Matrix 
+Q = 1e-6*eye(6);                    % a.k.a. W_apr
+Q(1:3, 1:3) = zeros(3);
+
+% Define 
+X = zeros(6, N);
+% rectangular matrix, havig (6x6) covariance matrix P at different times side by side
+Ps = [];
+Ps = [Ps, P0];
+X(:,1) = X0_ECI;
+
+
+%%% Kalmann Core %%%
+
+for j = 1 : N-1 
+
+    dt = t(j+1) - t(j);
+
+    % State Propagation
+    [t_int, X_int] = ode113('DynamicalModel_Cowell', [t(j), t(j+1)], X(:,j), options);
+    X(:, j+1) = X_int(end,:)';
+
+    % Covariance Propagation
+    r_vect = X(1:3, j+1);
+    A = A_matrix(r_vect);
+    phi = eye(6) + A*dt;
+    Xf = phi * X0; %%%%%%%%
+    P_est = phi * P0 * phi' + Q;
+
+    % Compute Kalman Gain Matrix
+    [Rgs, ~, ~] = groundStation(long_site, latgd_site, alt_site, t(j+1)/D_sol);
+    H = H_matrix(r_vect, Rgs);
+    K = P_est * H' * inv((H*P_est*H' + R));
+
+    % Update of State and Covariance
+    X(:,j+1) = X(:,j+1) + K*(Z(:,j+1) - H*X(:,j+1));
+    Pk = (eye(6) - K*H) * P_est;
+
+    % Store the Results
+    P0 = Pk;
+    Ps = [Ps, Pk];
+
+end
+
+
+% Computation of the determinant of the covariance matrix over time
+P_dets = zeros(N-1, 1);
+
+for k = 1 : N-1
+    P_star = Ps(:, (k-1)*6+1:(k-1)*6+6);
+    P_dets(k) = det(P_star);
+end
+
+COEf = rvECI2coe(X(1:3, end), X(4:6, end));
+fprintf('\n\tKalmann Classical Orbital Elements are:\n\ta = %.6f\n\te = %.6f\n\ti = %.6f\n\tOmega = %.6f\n\tomega = %.6f\n\tnu0 = %.6f\n\n', [COEf(1:2), rad2deg(COEf(3:6))])
+
+
+% %% TBD
+% 
+% %%% Generation of intermediate intervals
+% 
+% % I introduced a vector of intermediate times. Its dimensions are len-1
+% % (the number fo intervals between the len times of measurements) x steps
+% % (i.e. the number of points used to propagate state and covariance in
+% % intermediate intervals)
+% 
+% % steps = 100;
+% % t_inter = zeros(N-1, steps);
+% % X_inter = zeros(6,steps*(N-1));
+% % P_inter = zeros(6,6*steps*(N-1)); 
+% % 
+% % for i = 1 : N-1
+% %     t_inter(i,:)= linspace( t(i), t(i+1), steps );
+% % end
+% % 
+% % 
+% % for i = 1 : N-1
+% %     X0_inter = X(:,i);
+% %     P0_inter = P(:, 6*i-5: 6*i);
+% %     X_inter(:,steps*(i-1)+1) = X0_inter;
+% %     P_inter(:,6*(steps*(i-1)+1)-5: 6*(steps*(i-1)+1)) = P0_inter;
+% % 
+% %     for j = 1:steps-1
+% %         dt = t_inter(i,j+1)-t_inter(i,j);
+% %         % State propagation
+% %         [t_int2, X_int2] = ode45('statePropagator',[t_inter(i,j),t_inter(i,j+1)],X0_inter,options);
+% %         X_inter(:,steps*(i-1)+(j+1)) = X_int2(end,:)';
+% %         % Covariance propagation
+% %         r_vect = X_inter(1:3,steps*(i-1)+(j+1));
+% %         A = A_computer(r_vect);
+% %         phi = eye(6) + A*dt;
+% %         P_inter(:, 6*(steps*(i-1)+(j+1))-5:6*(steps*(i-1)+(j+1))) = phi* P0_inter *phi' + Q;
+% % 
+% %         P0_inter = P_inter(:, 6*(steps*(i-1)+(j+1))-5:6*(steps*(i-1)+(j+1)));
+% %         X0_inter = X_inter(:,steps*(i-1)+(j+1)); 
+% %     end
+% % 
+% % end
+% % 
+% % X_inter(:,end) = X(:,end);
+% % P_inter(:,end-5:end) = P(:,end-5:end);
+% % 
+% % % Computation of the determinant of the covariance matrix over time
+% % lenP = length(P_inter(1,:))/6;
+% % P_det = zeros(lenP,1);
+% % for u = 1:6:lenP*6
+% %     P_temp = P_inter(:, u:u+5);
+% %     if u > 1
+% %             q = (u-1)/6 + 1;
+% %     else
+% %         q = u;
+% %     end
+% %     P_det(q) = det(P_temp); 
+% % end
+% % 
+% % % I joint all intermediate time intervals in order to create a unique time
+% % % vector
+% % time = [];
+% % for i = 1 :N-1
+% %     time = [time t_inter(i,:)];
+% % end
+% % 
+% % finalCoe = rvECI2coe(X_inter(1:3,end),X_inter(4:6,end));
+% % 
+% % % Extraction of dates from time vector
+% % for i = 1:length(time)
+% %     t_aux = time(i) - fix(time(i)/D_sol)*D_sol;
+% %     dates_inter(i) = datetime(2022,5,16,0,0,t_aux);
+% % end
+% % 
+% % % Plot of the determinant of the covariance matrix over time
+% % figure()
+% % % plot(dates,P_det1,'b-', linewidth=0.8)
+% % % hold on
+% % plot(dates_inter, P_det, 'b-', linewidth=0.8)
+% % % plot(time, P_det, 'b-', linewidth=0.8)
+% % % xlabel('t [s]')
+% % ylabel('$\displaystyle \sqrt{det(P)} \ \left[\frac{m^3}{s^{3/2}}\right]$', interpreter='latex')
+% % title('Evoluzione temporale della radice del determinate della matrice di covarianza')
+% % % xticks(dates)
+% % % xlim([dates(1) dates(end)])
+% % % dates = [datetime(2022,5,16,19,9,45.03) datetime(2022,05,16,19,13,45.348) datetime(2022,05,16,19,17,44.411) ...
+% % %     datetime(2022,05,16,19,30,16.880) datetime(2022,05,16,19,42,37.889) datetime(2022,05,16,19,44,37.988) datetime(2022,05,16,19,46,38.195)];
+% 
+% 
+% %% Plot of the Results
+% 
+% % % Define Initial Conditions
+% % COE0 = finalCoe;
+% % fprintf('\n\tClassical Orbital Elements are:\n\ta = %.4f\n\te = %.4f\n\ti = %.4f\n\tOmega = %.4f\n\tomega = %.4f\n\tnu0 = %.4f\n\n', [COE0(1:2), rad2deg(COE0(3:6))])
+% % 
+% % % Define the Time Domain
+% % t0 = t1;
+% % a0 = COE0(1);                % initial semi-major axis
+% % T = 2*pi*sqrt(a0^3/mu);      % orbital period
+% % tf = t0 + T;
+% % 
+% % % Defining the options for the Integration
+% % Tol0 = 1e-9;
+% % Tol1 = 1e-11;
+% % MaxStep = 1;
+% % options = odeset('RelTol', Tol0, 'AbsTol',Tol1, 'MaxStep', MaxStep);
+% % 
+% % % Perform the Propagation
+% % [tspan, COE] = ode113('DynamicalModel_COE', [t0, tf], COE0, options);
+% % 
+% % % Store the Results
+% % COE = COE(:, 1:6);
+% % a = COE(:, 1);
+% % e = COE(:, 2);
+% % incl = COE(:, 3);
+% % omega= COE(:, 4);
+% % Omega = COE(:, 5);
+% % nu = COE(:, 6);
+% % 
+% % M = length(tspan);
+% % rMatrixECI = zeros(M, 3);
+% % 
+% % for j = 1 : M
+% %     [r_vect, v_vect] = coe2rvECI(COE(j, :), mu);
+% %     rMatrixECI(j, :) = r_vect';
+% % end
+% % 
+% % 
+% % figure('Name', 'Trajectory Representation in 3D')
+% % DrawTraj3D(rMatrixECI)
